@@ -59,22 +59,16 @@ GoviCare-AI/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/Govindpandey2003/GoviCare-AI.git
+git clone https://github.com/Govindpandey2003/AI_healthcare_chatbot
 ```
 
-### 2. Open the project folder
-
-```bash
-cd GoviCare-AI
-```
-
-### 3. Install dependencies
+### 2. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Run the application
+### 3. Run the application
 
 ```bash
 streamlit run app.py
