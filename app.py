@@ -1,5 +1,10 @@
 
+import pandas as pd
 import streamlit as st
+
+import gemini_bot
+import medicine_data
+import openfda
 from chatbot import get_bot_response
 from database import (
     create_database,
@@ -593,6 +598,104 @@ elif menu == "Medicine Information":
 
     st.title("💊 Medicine Information")
 
+    search_tab, basics_tab = st.tabs(
+        ["🔎 Search Indian Medicines", "📘 Common Medicines"]
+    )
+
+    with search_tab:
+        st.write(
+            "Search 2.5 lakh+ medicines sold in India by brand or salt "
+            "name. See price, manufacturer, composition, cheaper "
+            "alternatives with the same composition, and safety "
+            "information."
+        )
+
+        if not medicine_data.is_ready():
+            with st.status("Setting up medicine database (one time)...") as s:
+                medicine_data.ensure_database(progress=s.write)
+                s.update(label="Medicine database ready", state="complete")
+
+        query = st.text_input(
+            "Medicine or salt name",
+            placeholder="e.g. Dolo 650, Pan 40, cetirizine"
+        )
+
+        if query and len(query.strip()) >= 2:
+            results = medicine_data.search_medicines(query, limit=20)
+
+            if not results:
+                st.warning("No medicines found. Check the spelling.")
+            else:
+                options = {
+                    f"{m['name']} | ₹{m['price']} | {m['manufacturer']}": m
+                    for m in results
+                }
+                choice = st.selectbox(
+                    f"{len(results)} matches", list(options.keys())
+                )
+                med = options[choice]
+
+                st.subheader(med["name"])
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Price", f"₹{med['price']}")
+                c2.metric("Pack", med["pack_size"] or "-")
+                c3.metric("Type", (med["type"] or "-").title())
+                st.write(f"**Manufacturer:** {med['manufacturer']}")
+                st.write(f"**Composition:** {med['composition'] or '-'}")
+
+                alternatives = medicine_data.find_alternatives(med)
+                st.markdown("#### 💰 Cheaper alternatives (same composition)")
+                cheaper = [
+                    a for a in alternatives
+                    if med["price"] and a["price"] < med["price"]
+                ]
+                if cheaper:
+                    saving = med["price"] - cheaper[0]["price"]
+                    st.success(
+                        f"Lowest price found: ₹{cheaper[0]['price']} "
+                        f"(₹{saving:.2f} less). Compare pack sizes, and "
+                        "ask your doctor or pharmacist before switching."
+                    )
+                    st.dataframe(
+                        pd.DataFrame(cheaper)[
+                            ["name", "price", "pack_size", "manufacturer"]
+                        ].rename(columns={
+                            "name": "Brand", "price": "Price (₹)",
+                            "pack_size": "Pack", "manufacturer": "Manufacturer"
+                        }),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+                else:
+                    st.info("No cheaper brand with the same composition found.")
+                st.caption(
+                    "Tip: Pradhan Mantri Bhartiya Janaushadhi Kendras sell "
+                    "quality generic medicines at much lower prices."
+                )
+
+                st.markdown("#### 🛡️ Safety information")
+                for salt in medicine_data.salt_names(med):
+                    with st.spinner(f"Looking up {salt}..."):
+                        label = openfda.get_drug_label(salt)
+                    with st.expander(f"{salt}", expanded=True):
+                        if not label or not label["sections"]:
+                            st.write("No FDA label found for this salt.")
+                            continue
+                        for title, text in label["sections"].items():
+                            st.markdown(f"**{title}:** {text}")
+                st.caption(
+                    "Safety text comes from U.S. FDA drug labels (openFDA), "
+                    "looked up by generic name; Indian labelling may differ. "
+                    f"Prices and brands: {medicine_data.SOURCE_NAME}; "
+                    "prices may be outdated."
+                )
+
+        st.info(
+            "This module provides general educational information. "
+            "It does not recommend a medicine or dosage. "
+            "Consult a qualified doctor or pharmacist."
+        )
+
     medicines = {
 
         "Paracetamol": {
@@ -633,26 +736,28 @@ elif menu == "Medicine Information":
         }
     }
 
-    selected = st.selectbox(
-        "Select Medicine",
-        list(medicines.keys())
-    )
+    with basics_tab:
 
-    if st.button("Get Medicine Information"):
-
-        details = medicines[selected]
-
-        st.subheader(selected)
-
-        st.success("General Use: " + details["use"])
-
-        st.warning("Precaution: " + details["caution"])
-
-        st.info(
-            "This module provides general educational information. "
-            "It does not recommend a medicine or dosage. "
-            "Consult a qualified doctor or pharmacist."
+        selected = st.selectbox(
+            "Select Medicine",
+            list(medicines.keys())
         )
+
+        if st.button("Get Medicine Information"):
+
+            details = medicines[selected]
+
+            st.subheader(selected)
+
+            st.success("General Use: " + details["use"])
+
+            st.warning("Precaution: " + details["caution"])
+
+            st.info(
+                "This module provides general educational information. "
+                "It does not recommend a medicine or dosage. "
+                "Consult a qualified doctor or pharmacist."
+            )
 
 
 # ==================================
@@ -717,7 +822,18 @@ elif menu == "Chatbot":
 
     st.caption("Your Smart Health Information Companion")
 
-    st.info("Hello! Ask me about common health problems.")
+    if gemini_bot.is_configured():
+        st.success(
+            f"🟢 AI mode: Google Gemini ({gemini_bot.model_name()}) with "
+            "Indian medicine search and FDA drug safety lookup. "
+            "Ask in English, Hindi or Hinglish."
+        )
+    else:
+        st.info(
+            "🟡 Basic mode: add GEMINI_API_KEY to a .env file to enable "
+            "the AI assistant. You can still ask about common symptoms "
+            "or medicine prices, e.g. *dolo 650 ki kimat*."
+        )
 
     st.warning(
         "Disclaimer: This chatbot provides general health information "
@@ -768,7 +884,10 @@ elif menu == "Chatbot":
 
     if user_input:
 
-        response = get_bot_response(user_input)
+        with st.spinner("Thinking..."):
+            response, _source = get_bot_response(
+                user_input, st.session_state.messages
+            )
 
         save_chat(user_input, response)
 

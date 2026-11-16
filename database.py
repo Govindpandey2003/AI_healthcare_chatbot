@@ -1,8 +1,11 @@
 
+import os
 import sqlite3
 
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "healthcare.db")
+
 def create_database():
-    conn = sqlite3.connect("healthcare.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -19,7 +22,7 @@ def create_database():
 
 
 def save_chat(user_message, bot_response):
-    conn = sqlite3.connect("healthcare.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -32,7 +35,7 @@ def save_chat(user_message, bot_response):
 
 
 def get_chat_history():
-    conn = sqlite3.connect("healthcare.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute("SELECT * FROM chat_history ORDER BY id DESC")
@@ -42,7 +45,7 @@ def get_chat_history():
     return history
 
 def clear_chat_history():
-    conn = sqlite3.connect("healthcare.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute("DELETE FROM chat_history")
